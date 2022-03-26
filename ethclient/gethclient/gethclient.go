@@ -179,6 +179,11 @@ func (ec *Client) SubscribePendingTransactions(ctx context.Context, ch chan<- co
 	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactions")
 }
 
+// SubscribePendingTransactionsRaw subscribes to new pending transactions.
+func (ec *Client) SubscribePendingTransactionsRaw(ctx context.Context, ch chan<- *types.Transaction) (*rpc.ClientSubscription, error) {
+	return ec.c.EthSubscribe(ctx, ch, "newPendingTransactionsRaw")
+}
+
 func toBlockNumArg(number *big.Int) string {
 	if number == nil {
 		return "latest"

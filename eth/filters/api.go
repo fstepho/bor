@@ -41,6 +41,7 @@ type filter struct {
 	typ      Type
 	deadline *time.Timer // filter is inactiv when deadline triggers
 	hashes   []common.Hash
+	txs      []*types.Transaction
 	crit     FilterCriteria
 	logs     []*types.Log
 	s        *Subscription // associated subscription in event system
@@ -131,6 +132,38 @@ func (api *PublicFilterAPI) NewPendingTransactionFilter() rpc.ID {
 				api.filtersMu.Lock()
 				if f, found := api.filters[pendingTxSub.ID]; found {
 					f.hashes = append(f.hashes, ph...)
+				}
+				api.filtersMu.Unlock()
+			case <-pendingTxSub.Err():
+				api.filtersMu.Lock()
+				delete(api.filters, pendingTxSub.ID)
+				api.filtersMu.Unlock()
+				return
+			}
+		}
+	}()
+
+	return pendingTxSub.ID
+}
+
+func (api *PublicFilterAPI) NewPendingTransactionRawFilter() rpc.ID {
+	var (
+		pendingTxs   = make(chan []*types.Transaction)
+		pendingTxSub = api.events.SubscribePendingTxsRaw(pendingTxs)
+	)
+
+	api.filtersMu.Lock()
+	api.filters[pendingTxSub.ID] = &filter{typ: PendingTransactionsRawSubscription, deadline: time.NewTimer(api.timeout), txs: make([]*types.Transaction, 0), s: pendingTxSub}
+
+	api.filtersMu.Unlock()
+
+	go func() {
+		for {
+			select {
+			case ph := <-pendingTxs:
+				api.filtersMu.Lock()
+				if f, found := api.filters[pendingTxSub.ID]; found {
+					f.txs = append(f.txs, ph...)
 				}
 				api.filtersMu.Unlock()
 			case <-pendingTxSub.Err():
@@ -469,6 +502,10 @@ func (api *PublicFilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 			hashes := f.hashes
 			f.hashes = nil
 			return returnHashes(hashes), nil
+		case PendingTransactionsRawSubscription:
+			txs := f.txs
+			f.txs = nil
+			return returnTxs(txs), nil
 		case LogsSubscription, MinedAndPendingLogsSubscription:
 			logs := f.logs
 			f.logs = nil
@@ -477,6 +514,13 @@ func (api *PublicFilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 	}
 
 	return []interface{}{}, fmt.Errorf("filter not found")
+}
+
+func returnTxs(txs []*types.Transaction) []*types.Transaction {
+	if txs == nil {
+		return []*types.Transaction{}
+	}
+	return txs
 }
 
 // returnHashes is a helper that will return an empty hash array case the given hash array is nil,

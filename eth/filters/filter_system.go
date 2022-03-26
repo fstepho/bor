@@ -50,6 +50,7 @@ const (
 	// PendingTransactionsSubscription queries tx hashes for pending
 	// transactions entering the pending state
 	PendingTransactionsSubscription
+	PendingTransactionsRawSubscription
 	// BlocksSubscription queries hashes for blocks that are imported
 	BlocksSubscription
 	// StateSyncSubscription to listen main chain state
@@ -79,6 +80,7 @@ type subscription struct {
 	logsCrit  ethereum.FilterQuery
 	logs      chan []*types.Log
 	hashes    chan []common.Hash
+	txs       chan []*types.Transaction
 	headers   chan *types.Header
 	installed chan struct{} // closed when the filter is installed
 	err       chan error    // closed when the filter is uninstalled
@@ -318,6 +320,22 @@ func (es *EventSystem) SubscribePendingTxs(hashes chan []common.Hash) *Subscript
 	return es.subscribe(sub)
 }
 
+// SubscribePendingTxsRaw creates a subscription that writes transaction for
+// transactions that enter the transaction pool.
+func (es *EventSystem) SubscribePendingTxsRaw(transactions chan []*types.Transaction) *Subscription {
+	sub := &subscription{
+		id:        rpc.NewID(),
+		typ:       PendingTransactionsRawSubscription,
+		created:   time.Now(),
+		logs:      make(chan []*types.Log),
+		txs:       transactions,
+		headers:   make(chan *types.Header),
+		installed: make(chan struct{}),
+		err:       make(chan error),
+	}
+	return es.subscribe(sub)
+}
+
 type filterIndex map[Type]map[rpc.ID]*subscription
 
 func (es *EventSystem) handleLogs(filters filterIndex, ev []*types.Log) {
@@ -360,6 +378,16 @@ func (es *EventSystem) handleTxsEvent(filters filterIndex, ev core.NewTxsEvent) 
 	}
 	for _, f := range filters[PendingTransactionsSubscription] {
 		f.hashes <- hashes
+	}
+}
+
+func (es *EventSystem) handleTxsRawEvent(filters filterIndex, ev core.NewTxsEvent) {
+	txs := make([]*types.Transaction, 0, len(ev.Txs))
+	for _, tx := range ev.Txs {
+		txs = append(txs, tx)
+	}
+	for _, f := range filters[PendingTransactionsRawSubscription] {
+		f.txs <- txs
 	}
 }
 
@@ -472,6 +500,7 @@ func (es *EventSystem) eventLoop() {
 		select {
 		case ev := <-es.txsCh:
 			es.handleTxsEvent(index, ev)
+			es.handleTxsRawEvent(index, ev)
 		case ev := <-es.logsCh:
 			es.handleLogs(index, ev)
 		case ev := <-es.rmLogsCh:
