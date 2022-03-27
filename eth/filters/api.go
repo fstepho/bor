@@ -224,8 +224,8 @@ func (api *PublicFilterAPI) NewPendingTransactionsRaw(ctx context.Context) (*rpc
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		transactions := make(chan []common.Hash, 128)
-		pendingTxRawSub := api.events.SubscribePendingTxs(transactions)
+		transactions := make(chan []*types.Transaction, 128)
+		pendingTxRawSub := api.events.SubscribePendingTxsRaw(transactions)
 
 		for {
 			select {
