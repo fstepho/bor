@@ -41,7 +41,7 @@ type filter struct {
 	typ      Type
 	deadline *time.Timer // filter is inactiv when deadline triggers
 	hashes   []common.Hash
-	txs      []*types.Transaction
+	txs      [][]byte
 	crit     FilterCriteria
 	logs     []*types.Log
 	s        *Subscription // associated subscription in event system
@@ -148,12 +148,12 @@ func (api *PublicFilterAPI) NewPendingTransactionFilter() rpc.ID {
 
 func (api *PublicFilterAPI) NewPendingTransactionRawFilter() rpc.ID {
 	var (
-		pendingTxs   = make(chan []*types.Transaction)
+		pendingTxs   = make(chan [][]byte)
 		pendingTxSub = api.events.SubscribePendingTxsRaw(pendingTxs)
 	)
 
 	api.filtersMu.Lock()
-	api.filters[pendingTxSub.ID] = &filter{typ: PendingTransactionsRawSubscription, deadline: time.NewTimer(api.timeout), txs: make([]*types.Transaction, 0), s: pendingTxSub}
+	api.filters[pendingTxSub.ID] = &filter{typ: PendingTransactionsRawSubscription, deadline: time.NewTimer(api.timeout), txs: make([][]byte, 0), s: pendingTxSub}
 
 	api.filtersMu.Unlock()
 
@@ -224,7 +224,7 @@ func (api *PublicFilterAPI) NewPendingTransactionsRaw(ctx context.Context) (*rpc
 	rpcSub := notifier.CreateSubscription()
 
 	go func() {
-		transactions := make(chan []*types.Transaction, 128)
+		transactions := make(chan [][]byte, 128)
 		pendingTxRawSub := api.events.SubscribePendingTxsRaw(transactions)
 
 		for {
@@ -232,8 +232,8 @@ func (api *PublicFilterAPI) NewPendingTransactionsRaw(ctx context.Context) (*rpc
 			case txs := <-transactions:
 				// To keep the original behaviour, send a single tx hash in one notification.
 				// TODO(rjl493456442) Send a batch of tx hashes in one notification
-				for _, h := range txs {
-					notifier.Notify(rpcSub.ID, h)
+				for _, tx := range txs {
+					notifier.Notify(rpcSub.ID, tx)
 				}
 			case <-rpcSub.Err():
 				pendingTxRawSub.Unsubscribe()
@@ -551,9 +551,9 @@ func (api *PublicFilterAPI) GetFilterChanges(id rpc.ID) (interface{}, error) {
 	return []interface{}{}, fmt.Errorf("filter not found")
 }
 
-func returnTxs(txs []*types.Transaction) []*types.Transaction {
+func returnTxs(txs [][]byte) [][]byte {
 	if txs == nil {
-		return []*types.Transaction{}
+		return [][]byte{}
 	}
 	return txs
 }

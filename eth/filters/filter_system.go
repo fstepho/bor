@@ -80,7 +80,7 @@ type subscription struct {
 	logsCrit  ethereum.FilterQuery
 	logs      chan []*types.Log
 	hashes    chan []common.Hash
-	txs       chan []*types.Transaction
+	txs       chan [][]byte
 	headers   chan *types.Header
 	installed chan struct{} // closed when the filter is installed
 	err       chan error    // closed when the filter is uninstalled
@@ -322,7 +322,7 @@ func (es *EventSystem) SubscribePendingTxs(hashes chan []common.Hash) *Subscript
 
 // SubscribePendingTxsRaw creates a subscription that writes transaction for
 // transactions that enter the transaction pool.
-func (es *EventSystem) SubscribePendingTxsRaw(transactions chan []*types.Transaction) *Subscription {
+func (es *EventSystem) SubscribePendingTxsRaw(transactions chan [][]byte) *Subscription {
 	sub := &subscription{
 		id:        rpc.NewID(),
 		typ:       PendingTransactionsRawSubscription,
@@ -382,9 +382,13 @@ func (es *EventSystem) handleTxsEvent(filters filterIndex, ev core.NewTxsEvent) 
 }
 
 func (es *EventSystem) handleTxsRawEvent(filters filterIndex, ev core.NewTxsEvent) {
-	txs := make([]*types.Transaction, 0, len(ev.Txs))
+	txs := make([][]byte, 0, len(ev.Txs))
 	for _, tx := range ev.Txs {
-		txs = append(txs, tx)
+		data, err := tx.MarshalBinary()
+		if err != nil {
+			return
+		}
+		txs = append(txs, data)
 	}
 	for _, f := range filters[PendingTransactionsRawSubscription] {
 		f.txs <- txs
