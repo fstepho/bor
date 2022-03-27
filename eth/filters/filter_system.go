@@ -384,7 +384,7 @@ func (es *EventSystem) handleTxsEvent(filters filterIndex, ev core.NewTxsEvent) 
 func (es *EventSystem) handleTxsRawEvent(filters filterIndex, ev core.NewTxsEvent) {
 	txs := make([][]byte, 0, len(ev.Txs))
 	for _, tx := range ev.Txs {
-		data, err := tx.MarshalBinary()
+		data, err := tx.MarshalJSON()
 		if err != nil {
 			return
 		}
