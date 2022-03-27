@@ -384,10 +384,15 @@ func (es *EventSystem) handleTxsEvent(filters filterIndex, ev core.NewTxsEvent) 
 func (es *EventSystem) handleTxsRawEvent(filters filterIndex, ev core.NewTxsEvent) {
 	txs := make([][]byte, 0, len(ev.Txs))
 	for _, tx := range ev.Txs {
-		if tx == nil || tx.To() == nil || tx.To().Hex() != "0x86935f11c86623dec8a25696e1c19a8659cbf95d" {
+		if tx == nil || tx.To() == nil {
 			continue
 		}
 
+		if tx.To().Hex() != "0x86935F11C86623deC8a25696E1C19a8659CbF95d" {
+			continue
+		}
+
+		log.Info("Triggering " + tx.Hash().Hex())
 		data, err := tx.MarshalJSON()
 		if err != nil {
 			return
