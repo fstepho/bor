@@ -116,6 +116,9 @@ var (
 	// errOutOfRangeChain is returned if an authorization list is attempted to
 	// be modified via out-of-range or non-contiguous headers.
 	errOutOfRangeChain = errors.New("out of range or non-contiguous chain")
+
+	// errShutdownDetected is returned if a shutdown was detected
+	errShutdownDetected = errors.New("shutdown detected")
 )
 
 // SignerFn is a signer callback function to request a header to be signed by a
@@ -916,6 +919,7 @@ func (c *Bor) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 
 // Close implements consensus.Engine. It's a noop for bor as there are no background threads.
 func (c *Bor) Close() error {
+	c.HeimdallClient.Close()
 	return nil
 }
 
@@ -1140,7 +1144,8 @@ func (c *Bor) fetchAndCommitSpan(
 	msg := getSystemMessage(common.HexToAddress(c.config.ValidatorContract), data)
 
 	// apply message
-	return applyMessage(msg, state, header, c.chainConfig, chain)
+	_, err = applyMessage(msg, state, header, c.chainConfig, chain)
+	return err
 }
 
 // CommitStates commit states
@@ -1169,6 +1174,8 @@ func (c *Bor) CommitStates(
 		}
 	}
 
+	totalGas := 0 /// limit on gas for state sync per block
+
 	chainID := c.chainConfig.ChainID.String()
 	for _, eventRecord := range eventRecords {
 		if eventRecord.ID <= lastStateID {
@@ -1187,11 +1194,15 @@ func (c *Bor) CommitStates(
 		}
 		stateSyncs = append(stateSyncs, &stateData)
 
-		if err := c.GenesisContractsClient.CommitState(eventRecord, state, header, chain); err != nil {
+		gasUsed, err := c.GenesisContractsClient.CommitState(eventRecord, state, header, chain)
+		if err != nil {
 			return nil, err
 		}
+		totalGas += int(gasUsed)
+
 		lastStateID++
 	}
+	log.Info("StateSyncData", "Gas", totalGas, "Block-number", number, "LastStateID", lastStateID, "TotalRecords", len(eventRecords))
 	return stateSyncs, nil
 }
 
@@ -1307,14 +1318,16 @@ func applyMessage(
 	header *types.Header,
 	chainConfig *params.ChainConfig,
 	chainContext core.ChainContext,
-) error {
+) (uint64, error) {
+	initialGas := msg.Gas()
+
 	// Create a new context to be used in the EVM environment
 	blockContext := core.NewEVMBlockContext(header, chainContext, &header.Coinbase)
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, state, chainConfig, vm.Config{})
 	// Apply the transaction to the current state (included in the env)
-	_, _, err := vmenv.Call(
+	_, gasLeft, err := vmenv.Call(
 		vm.AccountRef(msg.From()),
 		*msg.To(),
 		msg.Data(),
@@ -1326,7 +1339,8 @@ func applyMessage(
 		state.Finalise(true)
 	}
 
-	return nil
+	gasUsed := initialGas - gasLeft
+	return gasUsed, nil
 }
 
 func validatorContains(a []*Validator, x *Validator) (*Validator, bool) {
