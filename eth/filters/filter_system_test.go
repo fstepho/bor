@@ -321,7 +321,7 @@ func TestPendingTxRawFilter(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if len(txs) != 1) {
+	if len(txs) != 1 {
 		t.Errorf("invalid number of transactions, want %d transactions(s), got %d", len(transactions), len(txs))
 		return
 	}
